@@ -15,24 +15,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	jj, err := tureng.PrepareReq(os.Args[1])
+	results, err := tureng.Translate(os.Args[1])
 	if err != nil {
 		fmt.Printf("%v\n", err)
 		os.Exit(1)
 	}
 
-	results, err := tureng.Translate(jj)
-	if err != nil {
-		fmt.Printf("%v\n", err)
-		os.Exit(1)
-	}
-
-	w := new(tabwriter.Writer)
-	w.Init(os.Stdout, 0, 10, 0, '\t', 0)
-	for _, v := range results.MobileResult.Results {
-		v.Category = strings.Replace(v.Category, " ", "", -1)
-		fmt.Printf("%s \t%s\n", v.Category, v.Term)
+	const padding = 3
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', 0)
+	for _, v := range results {
+		v.Category = strings.ReplaceAll(v.Category, " ", "")
+		fmt.Fprintf(w, "%s\t%s\t%s\n", v.Category, v.Term, v.TypeEN)
 	}
 	w.Flush()
-
 }

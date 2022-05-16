@@ -2,83 +2,77 @@ package tureng
 
 import (
 	"bytes"
-	"crypto/md5"
-	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/ioutil"
-	"log"
+	"io"
 	"net/http"
 )
 
+const (
+	url         = "http://ws.tureng.com/TurengSearchServiceV4.svc/Search"
+	contentType = "application/json"
+)
+
 type Result struct {
+	Category string `json:"CategoryEN"`
+	Term     string `json:"Term"`
+	TypeEN   string `json:"TypeEN"`
+}
+
+func Translate(word string) ([]Result, error) {
+	var payload bytes.Buffer
+	err := json.NewEncoder(&payload).Encode(requestPayload{Term: word})
+	if err != nil {
+		return nil, err
+	}
+
+	apiResponse, err := doRequest(&payload)
+	if err != nil {
+		return nil, err
+	}
+
+	if !apiResponse.IsSuccessful {
+		if apiResponse.Exception != "" {
+			return nil, fmt.Errorf("api-exception: %s", apiResponse.Exception)
+		}
+
+		return nil, fmt.Errorf("api-response: is not successful")
+	}
+
+	if apiResponse.MobileResult.IsFound != 1 {
+		return nil, fmt.Errorf("api-response: no results")
+	}
+
+	return apiResponse.MobileResult.Results, nil
+}
+
+func doRequest(body io.Reader) (*apiResponse, error) {
+	resp, err := http.Post(url, contentType, body)
+	if err != nil {
+		return nil, fmt.Errorf("http: %w", err)
+	}
+
+	defer resp.Body.Close()
+
+	var responsePayload apiResponse
+	err = json.NewDecoder(resp.Body).Decode(&responsePayload)
+	if err != nil {
+		return nil, fmt.Errorf("json: %w", err)
+	}
+
+	return &responsePayload, nil
+}
+
+type apiResponse struct {
 	Exception    string `json:"ExceptionMessage"`
 	IsSuccessful bool   `json:"IsSuccessful"`
 	MobileResult struct {
-		IsFound  int `json:"IsFound"`
-		IsTRToEN int `json:"IsTRToEN"`
-		Results  []struct {
-			Category string `json:"CategoryEN"`
-			Term     string `json:"Term"`
-			TypeEN   string `json:"TypeEN"`
-		} `json:"Results"`
+		IsFound  int      `json:"IsFound"`
+		IsTRToEN int      `json:"IsTRToEN"`
+		Results  []Result `json:"Results"`
 	} `json:"MobileResult"`
 }
 
-type Req struct {
+type requestPayload struct {
 	Term string `json:"Term"`
-	Code string `json:"Code"`
 }
-
-func getMD5Hash(text string) string {
-	hasher := md5.New()
-	hasher.Write([]byte(text))
-	return hex.EncodeToString(hasher.Sum(nil))
-}
-
-func PrepareReq(word string) (*bytes.Buffer, error) {
-	code := getMD5Hash(fmt.Sprintf("%s%s", word, WTF))
-	req := Req{word, code}
-	jsonStr, err := json.Marshal(req)
-	if err != nil {
-		return nil, err
-	}
-
-	return bytes.NewBuffer(jsonStr), nil
-}
-
-func Translate(reqString *bytes.Buffer) (*Result, error) {
-	resp, err := http.Post(URL, BODY_TYPE, reqString)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer resp.Body.Close()
-
-	body, _ := ioutil.ReadAll(resp.Body)
-	rr := &Result{}
-	err = json.Unmarshal(body, rr)
-	if err != nil {
-		return nil, err
-	}
-
-	if !rr.IsSuccessful {
-		return nil, errors.New("Tureng request is not successfull!")
-	}
-
-	if rr.MobileResult.IsFound != 1 {
-		return nil, errors.New("No results!")
-	}
-
-	if !rr.IsSuccessful || rr.MobileResult.IsFound != 1 {
-		return nil, errors.New("Not succesfull")
-	}
-	return rr, nil
-}
-
-const (
-	URL       = "http://ws.tureng.com/TurengSearchServiceV4.svc/Search"
-	WTF       = "46E59BAC-E593-4F4F-A4DB-960857086F9C"
-	BODY_TYPE = "application/json"
-)
