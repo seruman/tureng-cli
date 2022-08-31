@@ -1,78 +1,133 @@
 package tureng
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 )
 
 const (
-	url         = "http://ws.tureng.com/TurengSearchServiceV4.svc/Search"
+	apiAddr     = "http://api.tureng.com/v1/dictionary"
 	contentType = "application/json"
+
+	TurkishEnglish = "entr"
+	GermanEnglish  = "ende"
+	SpanishEnglish = "enes"
+	FrenchEnglish  = "enfr"
 )
 
-type Result struct {
-	Category string `json:"CategoryEN"`
-	Term     string `json:"Term"`
-	TypeEN   string `json:"TypeEN"`
+var defaultClient = NewClient()
+
+type Client struct {
+	httpClient *http.Client
+	dictionary string
 }
 
-func Translate(word string) ([]Result, error) {
-	var payload bytes.Buffer
-	err := json.NewEncoder(&payload).Encode(requestPayload{Term: word})
+func NewClient(opts ...clientOpts) *Client {
+	c := &Client{
+		httpClient: http.DefaultClient,
+		dictionary: TurkishEnglish,
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	return c
+}
+
+func (c *Client) Translate(word string) ([]TermResult, error) {
+	apiResponse, err := c.doRequest(apiAddr, word)
 	if err != nil {
 		return nil, err
 	}
 
-	apiResponse, err := doRequest(&payload)
-	if err != nil {
-		return nil, err
-	}
-
-	if !apiResponse.IsSuccessful {
-		if apiResponse.Exception != "" {
-			return nil, fmt.Errorf("api-exception: %s", apiResponse.Exception)
+	if !apiResponse.IsFound {
+		if len(apiResponse.Suggestions) == 0 {
+			return nil, fmt.Errorf("%q not found", word)
 		}
 
-		return nil, fmt.Errorf("api-response: is not successful")
+		return nil, fmt.Errorf("%q not found, suggestions;\n %s", word, strings.Join(apiResponse.Suggestions, "\n "))
 	}
 
-	if apiResponse.MobileResult.IsFound != 1 {
-		return nil, fmt.Errorf("api-response: no results")
-	}
-
-	return apiResponse.MobileResult.Results, nil
+	return apiResponse.AFullTextResults, nil
 }
 
-func doRequest(body io.Reader) (*apiResponse, error) {
-	resp, err := http.Post(url, contentType, body)
+func (c *Client) doRequest(baseAddr string, word string) (*apiResponse, error) {
+	addr, err := url.JoinPath(baseAddr, c.dictionary, word)
+	if err != nil {
+		return nil, fmt.Errorf("url-join : %w", err)
+	}
+	req, err := http.NewRequest(http.MethodGet, addr, nil)
+	if err != nil {
+		return nil, fmt.Errorf("new-request : %w", err)
+	}
+
+	// NOTE: Tureng's API responds with Cloudflare challenge if Go's default
+	// HTTP user agent is used. Mimic iOS app's request headers.
+	req.Header.Set("User-Agent", "Tureng/2012061663 CFNetwork/1335.0.3 Darwin/21.6.0")
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Accept-Language", "en-GB,en;q=0.9")
+
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("http: %w", err)
 	}
 
 	defer resp.Body.Close()
 
-	var responsePayload apiResponse
-	err = json.NewDecoder(resp.Body).Decode(&responsePayload)
+	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("json: %w", err)
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+	var responsePayload apiResponse
+	err = json.Unmarshal(b, &responsePayload)
+	if err != nil {
+		return nil, fmt.Errorf("json: %w, body:\n%s", err, b)
 	}
 
 	return &responsePayload, nil
 }
 
-type apiResponse struct {
-	Exception    string `json:"ExceptionMessage"`
-	IsSuccessful bool   `json:"IsSuccessful"`
-	MobileResult struct {
-		IsFound  int      `json:"IsFound"`
-		IsTRToEN int      `json:"IsTRToEN"`
-		Results  []Result `json:"Results"`
-	} `json:"MobileResult"`
+func Translate(word string) ([]TermResult, error) {
+	return defaultClient.Translate(word)
 }
 
-type requestPayload struct {
-	Term string `json:"Term"`
+type clientOpts func(*Client)
+
+func WithHttpClient(httpClient *http.Client) clientOpts {
+	return func(c *Client) {
+		c.httpClient = httpClient
+	}
+}
+
+func WithDictionary(dictionary string) clientOpts {
+	return func(c *Client) {
+		c.dictionary = dictionary
+	}
+}
+
+type apiResponse struct {
+	SearchedTerm                    string       `json:"SearchedTerm"`
+	IsFound                         bool         `json:"IsFound"`
+	AResults                        []TermResult `json:"AResults"`
+	BResults                        []TermResult `json:"BResults"`
+	AFullTextResults                []TermResult `json:"AFullTextResults"`
+	BFullTextResults                []TermResult `json:"BFullTextResults"`
+	AccentInsensitive               bool
+	AvailabilityOnOtherDictionaries map[string]bool
+	PrimeATerm                      string
+	Suggestions                     []string
+}
+
+type TermResult struct {
+	TermA         string `json:"TermA"`
+	TermB         string `json:"TermB"`
+	CategoryTextA string `json:"CategoryTextA"`
+	CategoryTextB string `json:"CategoryTextB"`
+	TermTypeTextA string `json:"TermTypeTextA"`
+	TermTypeTextB string `json:"TermTypeTextB"`
+	IsSlang       bool
 }
