@@ -23,7 +23,7 @@ func main() {
 	const padding = 3
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, padding, ' ', 0)
 	for _, v := range results {
-		fmt.Fprintf(w, "%s\t%s\t%s\n", v.CategoryTextB, v.TermA, v.TermB)
+		fmt.Fprintf(w, "%s\t%s(%s)\t%s(%s)\n", v.CategoryTextB, v.TermA, v.TermTypeTextA, v.TermB, v.TermTypeTextB)
 	}
 	w.Flush()
 }
