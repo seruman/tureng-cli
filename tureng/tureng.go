@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -24,12 +26,23 @@ var defaultClient = NewClient()
 type Client struct {
 	httpClient *http.Client
 	dictionary string
+	debug      struct {
+		enabled bool
+		out     io.Writer
+	}
 }
 
 func NewClient(opts ...clientOpts) *Client {
 	c := &Client{
 		httpClient: http.DefaultClient,
 		dictionary: TurkishEnglish,
+		debug: struct {
+			enabled bool
+			out     io.Writer
+		}{
+			enabled: false,
+			out:     os.Stderr,
+		},
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -65,6 +78,8 @@ func (c *Client) doRequest(baseAddr string, word string) (*apiResponse, error) {
 		return nil, fmt.Errorf("new-request : %w", err)
 	}
 
+	c.dumpRequest(req)
+
 	// NOTE: Tureng's API responds with Cloudflare challenge if Go's default
 	// HTTP user agent is used. Mimic iOS app's request headers.
 	req.Header.Set("User-Agent", "Tureng/2012061663 CFNetwork/1335.0.3 Darwin/21.6.0")
@@ -78,6 +93,8 @@ func (c *Client) doRequest(baseAddr string, word string) (*apiResponse, error) {
 
 	defer resp.Body.Close()
 
+	c.dumpResponse(resp)
+
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
@@ -89,6 +106,30 @@ func (c *Client) doRequest(baseAddr string, word string) (*apiResponse, error) {
 	}
 
 	return &responsePayload, nil
+}
+
+func (c *Client) dumpRequest(req *http.Request) {
+	if c.debug.enabled {
+		b, err := httputil.DumpRequestOut(req, true)
+		if err != nil {
+			fmt.Fprintf(c.debug.out, "dump request: %v", err)
+			return
+		}
+
+		fmt.Fprintf(c.debug.out, "%s", b)
+	}
+}
+
+func (c *Client) dumpResponse(resp *http.Response) {
+	if c.debug.enabled {
+		b, err := httputil.DumpResponse(resp, true)
+		if err != nil {
+			fmt.Fprintf(c.debug.out, "dump response: %v", err)
+			return
+		}
+
+		fmt.Fprintf(c.debug.out, "%s", b)
+	}
 }
 
 func Translate(word string) ([]TermResult, error) {
@@ -106,6 +147,18 @@ func WithHttpClient(httpClient *http.Client) clientOpts {
 func WithDictionary(dictionary string) clientOpts {
 	return func(c *Client) {
 		c.dictionary = dictionary
+	}
+}
+
+func WithDebug(enabled bool) clientOpts {
+	return func(c *Client) {
+		c.debug.enabled = enabled
+	}
+}
+
+func WithDebugOutput(w io.Writer) clientOpts {
+	return func(c *Client) {
+		c.debug.out = w
 	}
 }
 

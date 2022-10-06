@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -9,14 +10,25 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 || os.Args[1] == "" {
-		fmt.Println("Usage tureng [word] ")
+	fs := flag.NewFlagSet("tureng", flag.ExitOnError)
+	flagDebug := fs.Bool("debug", false, "enable debug mode to dump request/response")
+
+	err := fs.Parse(os.Args[1:])
+	if err != nil {
+		fs.PrintDefaults()
 		os.Exit(1)
 	}
 
-	results, err := tureng.Translate(os.Args[1])
+	args := fs.Args()
+
+	if len(args) < 1 || args[0] == "" {
+		fs.PrintDefaults()
+		os.Exit(1)
+	}
+
+	t := tureng.NewClient(tureng.WithDebug(*flagDebug))
+	results, err := t.Translate(args[0])
 	if err != nil {
-		fmt.Printf("%v\n", err)
 		os.Exit(1)
 	}
 
