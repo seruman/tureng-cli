@@ -65,7 +65,16 @@ func (c *Client) Translate(word string) ([]TermResult, error) {
 		return nil, fmt.Errorf("%q not found, suggestions;\n %s", word, strings.Join(apiResponse.Suggestions, "\n "))
 	}
 
-	return apiResponse.AFullTextResults, nil
+	// TODO(selman): Not sure exactly what is A and B but for 'entr' it seems
+	// like A is `en -> tr` and B is `tr -> en`. It would be good to see what
+	// is what in the output and ability to filter them out.
+	var termResults []TermResult
+	termResults = append(termResults, apiResponse.AResults...)
+	termResults = append(termResults, apiResponse.BResults...)
+	termResults = append(termResults, apiResponse.AFullTextResults...)
+	termResults = append(termResults, apiResponse.BFullTextResults...)
+
+	return termResults, nil
 }
 
 func (c *Client) doRequest(baseAddr string, word string) (*apiResponse, error) {
