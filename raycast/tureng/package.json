@@ -1,6 +1,6 @@
 {
   "$schema": "https://www.raycast.com/schemas/extension.json",
-  "owner": "seruman",
+  "owner": "selman",
   "name": "tureng",
   "title": "Tureng",
   "description": "Translate word with Tureng",
