@@ -6,7 +6,7 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/seruman/tureng-cli/tureng"
+	"code.selman.me/tureng-cli/tureng"
 )
 
 func main() {
